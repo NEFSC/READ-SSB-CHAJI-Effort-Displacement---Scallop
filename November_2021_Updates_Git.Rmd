@@ -21,7 +21,7 @@ This code depends on:
 # Project setup
 Load packages, installing any necessary ones.  Read in oracle username and password from "R_credentials.R".  
 
-```{r setup, include=FALSE}
+```{r setup, include=TRUE}
 PKG <- c("leaflet", "tidyverse", "sf", "ggplot2","RODM","ROracle", "dplyr", "dbplyr", "tidyverse", "raster", "rgdal")
 for (p in PKG) {
   if(!require(p,character.only = TRUE)) {
