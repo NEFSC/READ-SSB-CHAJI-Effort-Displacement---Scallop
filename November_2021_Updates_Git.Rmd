@@ -34,8 +34,11 @@ source("~\R_credentials.R")
 ```
 
 # Load Offshore Wind Tool Data sets 
-```{r Data Set Loading, echo=FALSE}
 
+The frozen DMIS table from the offshoreWind project (APSD_DMIS_2) is the base dataset for the analysis.
+
+
+```{r Data Set Loading, echo=FALSE}
 load("~/offshoreWind-master/data/APSD_DMIS_2.rda")
 load("~/offshoreWind-master/data-raw/REVENUEFILE.Rdata")
 
@@ -44,7 +47,22 @@ load("~/offshoreWind-master/data-raw/REVENUEFILE.Rdata")
 
 
 # Loading Data fom Oracle 
+
+The APSD_DMIS_2 table must be supplemented with additional data.  This section queries the Oracle databases to extract additional information.
+
 ## VTR Data
+
+Data in the VTR schema is needed.  We extract the 
+     
+1. TRIPID  - linking field 	
+1. tripcatg  - Indicates whether this is a commercial trip, for hire trip, or another kind of trip 	
+1. operator -   the name of the vessel operator
+1. opernum - the idnumber for the vessel operator
+1. permit -  the permit number of the vessel (vp_num) in the vps schema
+1. nsubtrip -  the number of subtrips corresponding to the trip
+1. crew 	- the number of crew 
+1. not_fished -  Indicator for whether this was a fishing trip or not 	
+
 ```{r, echo=FALSE}
 
 
