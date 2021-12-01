@@ -4,43 +4,33 @@ author: "Marina Chaji"
 date: "11/26/2021"
 output: html_document
 ---
+# Purpose
 
-# Load Packages
-## First time use 
+This code extracts and processes data. Our goal is to construct a dataset that can be used to estimate a location choice model for the Limited Access Scallop Fishery, using data from 2007-2019 (calendar years).  The main datasource is a frozen DMIS table.
+
+# Dependencies
+
+This code depends on:
+1.  Two datasets from the offshoreWind package. These two datasets should be placed into the subfolder offshoreWind-master/data folder.  You can get these data from *fillin location*.
+2. Trip cost estimtes. These can be found at  \\net\home6\swerner\\Drop_off\Trip_Cost_Estimation_2007_2017  
+3. An ability to connect to NEFSC oracle databases (VTR and the Live DMIS tables at APSD.t_ssb_trip_current@garfo_nefsc)
+
+
+
+
+# Project setup
+Load packages, installing any necessary ones.  Read in oracle username and password from "R_credentials.R".  
+
 ```{r setup, include=FALSE}
+PKG <- c("leaflet", "tidyverse", "sf", "ggplot2","RODM","ROracle", "dplyr", "dbplyr", "tidyverse", "raster", "rgdal")
+for (p in PKG) {
+  if(!require(p,character.only = TRUE)) {
+    install.packages(p)
+    require(p,character.only = TRUE)}
 
-install.packages("leaflet")
-install.packages("tidyverse")
-install.packages("sf")
-install.packages("ggplot2")
-install.packages("RODM")
-install.packages("ROracle")
-install.packages("dplyr")
-install.packages("dbplyr")
-install.packages("tidyverse")
-install.packages("raster")
-install.packages("rgdal")
+source("~\R_credentials.R")
 
-
-```
-
-
-## After first time use
-```{Library call}
-
-library("leaflet")
-library("tidyverse")
-library("sf")
-library("ggplot2")
-library("RODM")
-library("ROracle")
-library("dbplyr")
-library("dplyr")
-library("RODBC")
-library("raster")
-library("rgdal")
-
-
+}
 ```
 
 # Load Offshore Wind Tool Data sets 
@@ -56,10 +46,9 @@ load("~/offshoreWind-master/data-raw/REVENUEFILE.Rdata")
 # Loading Data fom Oracle 
 ## VTR Data
 ```{r, echo=FALSE}
-#### Oracle login credentials
-oracle_username = "mchaji"
-oracle_password = "****"
-oracle_server = "sole"
+
+
+
 ODBC.CONNECTION <- RODBC::odbcConnect(dsn=oracle_server, uid=oracle_username, pwd=oracle_password, believeNRows=FALSE)
 START.YEAR = 2007
 END.YEAR = 2019
@@ -93,9 +82,6 @@ ODBC.CONNECTION <- RODBC::odbcConnect(dsn=oracle_server, uid=oracle_username, pw
 ##Scallop LA IFQ Linking variables 
 ```{r}
  
-oracle_username = "mchaji"
-oracle_password = "****"
-oracle_server = "sole"
 ODBC.CONNECTION <- RODBC::odbcConnect(dsn=oracle_server, uid=oracle_username, pwd=oracle_password, believeNRows=FALSE)
 
 CURRENT.QUERY = paste ("SELECT TRIP_ID, DOCID, ACTIVITY_CODE FROM APSD.t_ssb_trip_current@garfo_nefsc")
