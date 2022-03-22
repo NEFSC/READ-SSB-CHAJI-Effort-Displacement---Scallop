@@ -1,0 +1,595 @@
+---
+title: "data_processing"
+author: "Marina Chaji"
+date: "3/8/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+# Project setup
+here(), load libraries, and set a data vintage.
+
+```{r setup, include=TRUE, echo=TRUE, results=FALSE}
+
+# Set Path
+here::i_am("data_wrangle/data_processing.Rmd")
+
+# Please ensure you have the proper packages installed with (install.packages()) or a request to ITD if any libaries do not load.  
+
+
+library("here")
+library("leaflet")
+library("tidyverse")
+library("sf")
+library("dbplyr")
+library("raster")
+library("rgdal")
+library("readxl")
+library("data.table")
+library("tmaptools")
+library("tmap")
+library("dplyr")
+library("RODBC")
+library("RODM")
+library("epiDisplay")
+library("tmap")
+library("tidyverse")
+vintage_string<-Sys.Date()
+vintage_string<-gsub("-","_",vintage_string)
+
+```
+
+```{r reset_vintage_string, include=TRUE, echo=TRUE, results=FALSE}
+#This code looks into data_intermediate and sets the vintage_string according to the most recent data
+datasets_list<-list.files(path=here("data","intermediate"), pattern="RESULT_COMPILED_")
+datasets_list<-gsub("RESULT_COMPILED_","",datasets_list )
+datasets_list<-gsub(".Rds","",datasets_list)
+datasets_list<-gsub(".csv","",datasets_list)
+vintage_string<-max(datasets_list)
+rm(datasets_list)
+```
+
+We will:
+
+1. Try to avoid copying data; when we rely on data from other people, we will read it directly into memory from the network location or Oracle.
+1. Sometimes this is unnecessary, so we will copy external data into the "data/external" folder. We will have a separate subfolder for shapefiles.
+1. Store an intermediate data product in "data/intermediate".
+1. Store final data products in "data/main."
+1. Use a vintage "suffix" to denote when we have extracted data.
+
+
+# Organization
+
+
+```{r folder_create, include=TRUE, echo=FALSE, results=FALSE}
+# You only need to run this once, but nothing bad will happen if you keep include=TRUE.
+
+# Set up some folders
+
+dir.create(here("data"), showWarnings="FALSE")
+dir.create(here("data", "external"), showWarnings="FALSE")
+dir.create(here("data", "external","shapefiles"), showWarnings="FALSE")
+dir.create(here("data", "intermediate"), showWarnings="FALSE")
+dir.create(here("data", "main"), showWarnings="FALSE")
+dir.create(here("data","external","shapefiles","East_Cst_crop_2020_extended"), showWarnings="FALSE")
+dir.create(here("data","external","shapefiles","Ten Minute Squares Cut North and Greater Atlantic"), showWarnings="FALSE")
+dir.create(here("data","external","shapefiles","All_Lease_Areas_Shapefile"), showWarnings="FALSE")
+
+```
+
+We will:
+
+1. Try to avoid copying data; when we rely on data from other people, we will read it directly into memory from the network location or Oracle.
+1. Sometimes this is unnecessary, so we will copy external data into the "data/external" folder. We will have a separate subfolder for shapefiles.
+1. Store an intermediate data product in "data/intermediate".
+1. Store final data products in "data/main."
+1. Use a vintage "suffix" to denote when we have extracted data.
+
+
+
+## Read in oracle passwords and set network directory
+This is a block of code where we set up the oracle passwords and make R aware of folders on the network.
+
+```{r oracle_connections, echo=TRUE, results=FALSE}
+source(here("data_wrangle","credentials.R"))
+
+# Set the network_location_desktop and network_location_remote variables somewhere OUTSIDE of this code.  The best place to do this is in the .Rprofile or .Renviron files that are in your root directory.  
+
+#Comment one of these out, depending on whether you are running this code on a server or locally (with VPN) 
+net<-network_location_desktop
+net<-network_location_remote
+
+# These are not part of the project path
+offshoreWind_directory<-file.path(net,"home5", "dcorvi","OffshoreWind","offshoreWind4","data")
+spacepanels_directory<-file.path(net,"home2", "mlee","dropoff","wind")
+cost_directory<-file.path(net,"work5","socialsci","Trip_Costs","2007-2020")
+
+# Set up paths.
+East_Cst_crop_2020_path<- here("data","external","shapefiles","East_Cst_crop_2020_extended")
+TMSQ_path<-here("data","external","shapefiles","Ten Minute Squares Cut North and Greater Atlantic")
+All_Lease_Areas_Shapefile_path<-here("data","external","shapefiles","All_Lease_Areas_Shapefile")
+```
+
+
+```{r read in RDS, include=TRUE, echo=TRUE, results=FALSE}
+
+#Read in RDS
+
+Scallop_Linkingorg <- readRDS(here("data","intermediate",paste0("Scallop_Linkingorg_",vintage_string,".Rds")))
+RESULT_COMPILED <- readRDS(here("data","intermediate",paste0("RESULT_COMPILED_",vintage_string,".Rds")))
+APSD_DMIS_2 <- readRDS(here("data","intermediate",paste0("APSD_DMIS_2_",vintage_string,".Rds")))
+all_yrs_costs <- readRDS(here("data","intermediate",paste0("all_yrs_costs_",vintage_string,".Rds")))
+
+
+```
+
+
+
+
+
+
+
+# Introduction
+
+The main idea of the model is that the fishermen/decision-makers choose from a number of alternatives, where the choice occasion is a fishing trip and selects the one that yields the highest expected utility level on any given choice occasion. By observing and modeling how decision-makers change their preferred site option in response to the changes in the levels of the site attributes, it is possible to determine how decision-makers tradeoff between the different fishing ground characteristics.
+
+# Long Term Objectives
+The project objective is to develop a site-choice model primarily, improve, maintain, and disseminate a standardized fisheries dependent data set and analytical summaries that provide a more precise, accurate, comprehensive, and timely evaluation of area-specific socioeconomic impacts associated with ecosystem fishery management initiatives, offshore energy development, and offshore aquaculture development. The site-choice model and underlying data set will help support fishery and ecosystem management decisions to achieve optimum yield in each fishery and the nation’s most significant benefit.
+
+Understanding the effects of wind energy areas that are early in the process may be more impactful from a policy perspective. So, not necessarily the current wind areas, but the next block that may be coming over the next 10-30 years.  Also, cumulative effects may be important.
+
+
+# Empirical Setting
+
+## Scallop Fishery
+
+We are modeling the location choices of fishing vessels in the Limited Access Days-at-Sea scallop fishery. There are approximately 300-330 of these fishing vessels.  They are allocated "Open Area Days-at-Sea" and a quantity of trips and/or pounds into the "Access Areas."  They catch approximately 95% of the scallops.  The Limited Access DAS fleet can be further subdivided into Full-Time, Part-Time, and Occasional Fleets.  Vessels primarily use the New Bedford scallop dredge, but a few use a smaller dredge or a bottom trawl.  Over the 13 years in our dataset, there are approximately 40,000 trips taken by this fleet, split roughly evenly into "Open areas" and "Access Areas."
+
+For Fishing Year 2016 and earlier, the fishing year Ran from March 1 to Feb 28/29. For fishing year 2017, the year ran from March 1 to March 31.  For 2018 and later, the fishing year runs from April 1 to March 31.
+
+## Wind Energy
+
+Here is a short description of the wind energy areas and how they will close (or not close) area to fishing.  18 wind areas currently under dev.  But many more are likely.
+
+How close will fishing be able to occur within Wind Lease Areas / Turbines?  
+
+The wind energy areas do not match the ten minute squares; we are currently planning on simulating the effects of closing a wind energy area by closing an entire ten minute square that is inside or touching a WEA.  
+
+The buried cable route from a WEA to shore is likely to be closed as well.  Cable buried at shallow depths and marked with concrete.
+
+
+We  classify the trips as FullTime, PartTime based on these PLAN_CAT variables.   We also generate categorical variables corresponding to LA and GC columns. Note that a vessel can hold both an LA and a GC permit at the same time. The summary tables below will have lots of observations corresponding to Scallop_Linkingorg[ftpt]=0, LA=0, and GC=0. This is expected.   because it has everything from DMIS.  
+
+
+```{r DMIS_Tidy, echo=TRUE}
+# Bin the LA vessels into full time or part time. 
+Scallop_Linkingorg$ftpt<-"None"
+Scallop_Linkingorg$ftpt[Scallop_Linkingorg$SC_2=="TRUE"]<-"FullTime"
+Scallop_Linkingorg$ftpt[Scallop_Linkingorg$SC_5=="TRUE"]<-"FullTime"
+Scallop_Linkingorg$ftpt[Scallop_Linkingorg$SC_7=="TRUE"]<-"FullTime"
+
+Scallop_Linkingorg$ftpt[Scallop_Linkingorg$SC_6=="TRUE"]<-"PartTime"
+Scallop_Linkingorg$ftpt[Scallop_Linkingorg$SC_3=="TRUE"]<-"PartTime"
+
+# Construct a logical variable for GC
+Scallop_Linkingorg$GC<-(Scallop_Linkingorg$LGC_A=="TRUE" | Scallop_Linkingorg$LGC_B=="TRUE" | Scallop_Linkingorg$LGC_C=="TRUE" | Scallop_Linkingorg$SG_1A=="TRUE" | Scallop_Linkingorg$SG_1B=="TRUE") 
+
+# Construct a logical variable for LA
+Scallop_Linkingorg$LA<-(Scallop_Linkingorg$ftpt=="PartTime" | Scallop_Linkingorg$ftpt=="FullTime")
+
+
+#Make some tables
+table(Scallop_Linkingorg$ftpt)
+
+table(Scallop_Linkingorg$GC)
+
+table(Scallop_Linkingorg$LA,Scallop_Linkingorg$GC)
+
+#Select certain columns
+Scallop_Linkingorg_bak<-Scallop_Linkingorg
+Scallop_Linkingorg<-dplyr::select(Scallop_Linkingorg, c(TRIP_ID,DOCID, ACTIVITY_CODE, ftpt, GC,LA))
+
+is.logical(Scallop_Linkingorg$GC)
+is.logical(Scallop_Linkingorg$LA)
+```
+
+
+We don't want to create a single plan column, because a vessel could have multiple kinds of scallop permits. Instead, if we want just the Fulltime LA vessels, we can do something like:
+
+
+```{r DMIS_FT_filter, eval=FALSE}
+
+Limited_Access <-Scallop_Linkingorg %>%filter(LA=="TRUE")
+Limited_Access_ft<-Limited_Access %>%filter(ftpt=="FullTime")
+
+
+```
+
+# Data Cleaning 
+
+1. Filter down to only Scallop Species 
+2. Seperate Dates & Times and Delete Old Dates Column 
+3. Delete Columns that are not need 
+4. NESPP3 & SOURCE Values do not vary across the observations, so these two columns can be  deleted 
+
+```{r datacleaning_step1, echo=TRUE}
+
+Scallops <- APSD_DMIS_2 %>% filter (SPPNAME == "SCALLOPS/BUSHEL")
+
+#Separate Dates & Times
+Scallops$Date <- as.Date(Scallops$DATE_TRIP)
+Scallops$Time <- format(Scallops$DATE_TRIP,"%H:%M:%S")
+
+#Drop columns that are not needed
+Scallops$DATE_TRIP<- NULL
+Scallops$NESPP3<- NULL
+Scallops$SOURCE<- NULL
+
+```
+
+
+
+
+
+
+# Merging
+
+1. Merge Scallops & VTR Data Sets (RESULT.COMPILED). We keep all columns from both the APSD_DMIS_2 and RESULT.COMPILED datasets. We also:
+     1. Filter out 2020 values 
+     1. Delete Extra PERMIT Column because there were a few missing values.
+     1. Delete all TRIPCATG that are not 1. This isolates all commercial trips
+     1. Drop rows corresponding to a "Not Fished" VTR. 
+2. Join the output of (1) with Activity Codes 
+3. Verify that we get what we think we should get.
+
+```{r data_merging1, echo=TRUE}
+
+##1. Merge Scallops & VTR Data Sets (RESULT.COMPILED). We keep all columns from both the APSD_DMIS_2 and RESULT.COMPILED datasets. by VTR.TRIPID=APSD_DMIS_2.DOCID
+
+# all.x = TRUE & all.y = FALSE means I am keeping data with no match from DMIS table but dropping data with no match from the Veslog tables
+
+# DOCID is used because of the following found in the data dictionary "VESLOG Trip record identifier, which is generated internally; Primary key for VESLOGyyyyT; Foreign key to VESLOGyyS, VESLOGyyG. Equivalent to DOCID in VTR DOCUMENT table"
+VTR_DMIS_merge <- merge(RESULT_COMPILED,Scallops, by.x = "TRIPID", by.y = "DOCID", all.x = FALSE, all.y = TRUE)
+
+## Filter out 2020 values 
+VTR_DMIS_merge <- VTR_DMIS_merge %>% filter(YEAR <= "2019")
+
+# Delete Extra PERMIT Column
+## Note: X was deleted because PERMIT.y had zero NAs and PERMIT.x had 25 
+VTR_DMIS_merge$PERMIT.x <- NULL
+
+# Delete all TRIPCATG that are not 1. This isolates all commercial trips
+## Type of trip: 1=Commercial; 2=Party; 3=Charter; 4=RSA/EFP. Note: RSA/EFP landings represent a small amount of all commercial landings; landings vary by gear type and species.
+
+VTR_DMIS_merge <- VTR_DMIS_merge %>% filter(TRIPCATG == "1")
+VTR_DMIS_merge$TRIPCATG <- NULL
+
+# Delete all NOT_FISHED that are not 0. This indicates whether the 'Did not fish' box was checked on the Vessel Trip Report. 0=Fishing activity; 1=No fishing activity/Negative report.
+VTR_DMIS_merge <- VTR_DMIS_merge %>% filter(NOT_FISHED == "0")
+VTR_DMIS_merge$NOT_FISHED <- NULL
+
+
+## 2. 
+###Join VTR & DMIS Data with Activity Codes 
+
+# Delete duplicate rows; These are rows that share the same TRIPID, DOLLAR,LANDED, & TRIP_LENGTH 
+## Note: VTRs are self-reported and there is a potential for records to be submitted to regional office multiple times; on rare occasions this can result in duplicate records being logged.
+VTR_DMIS_AC <- merge(VTR_DMIS_merge,Scallop_Linkingorg, by.x = "TRIPID", by.y = "DOCID", all.x = TRUE, all.y = FALSE)
+VTR_DMIS_AC <- VTR_DMIS_AC %>% distinct(TRIPID,DOLLAR,TRIP_LENGTH,LANDED, .keep_all = TRUE)  
+
+## Created two sets of cost joins.
+### 1. Before LA Estimation
+### 2. After LA Estimation
+VTR_DMIS_AC <- merge(VTR_DMIS_AC,all_yrs_costs, by.x = "TRIPID", by.y = "VTR_TRIPID", all.x = TRUE,all.y =FALSE)
+
+#Split Activity codes to allow for easier data management. VMS Declaration code book is broken down by Plan Codes,Program Codes, and Area Identifiers.However data is stored in one long string so this code breaks up the string so each group can be looked at individually. 
+VTR_DMIS_AC$ACTIVITY_CODE <- as.character(VTR_DMIS_AC$ACTIVITY_CODE)
+VTR_DMIS_AC <- VTR_DMIS_AC %>% separate(ACTIVITY_CODE, into = c('Plan Code','Program Code','Area Identifier', sep = '-'))
+VTR_DMIS_AC$`-` <- NULL
+
+
+
+## 3. 
+### Testing Reported NAs in new data set (that they are relatively even across all years)
+#### Note: The variable used in this command can be substituted for whatever needs to be tested. In this case I am testing OPERNUM, because that will be used to determine decisions in the model 
+
+testing <- VTR_DMIS_AC %>%
+group_by("YEAR") %>% filter(is.na(OPERNUM))
+
+
+```
+
+
+
+# Data Aggregating Trip Revenues & Delete duplicate TRIPIDs
+
+Subtrips are generated when a vessel switches gear or statistical areas. Subtrips have identical TRIPID/DOCID.  A trip may have many (8+) subtrips, but the majority of trips observed only have one subtrip (95.7% using original VTR & DMIS merged data set). If a trip has just 1 subtrip, the trip took place in a single statistical area.  If a trip crosses four different statistical areas, the NSUBTRIP is then equal to 4, and the landings, value, latitude, and longitude are reported separately for each area. 
+
+
+```{r count_subtrips, echo=TRUE}
+table(VTR_DMIS_AC$NSUBTRIP)
+```
+
+
+
+Since our goal is to estimate a choice model at the trip level, we need to construct trip level variables.  
+ We retained the subtrip attributes  (GEARCODE, DDLAT, DDLON) corresponding to the subtrip with the highest DOLLAR.  We constructed trip-level values for revenue, pounds, and landed (DOLLAR, POUNDS, LANDED).  The trip level variables are prefixed with "Agg_". 
+
+1. Aggregate DOLLAR, POUNDS, LANDED
+1. Add back into original data set 
+1. Check / Test Maximum DOLLAR values by grouping by TRIPID
+1. Drop duplicate TRIPIDs by keeping maximum DOLLAR values 
+
+This may not be realistic. There are anecdotes of vessels fishing in one spot on the way to another, further offshore spot.  Subtrips may be a bigger issue when we extend to other fisheries.If we have the ability to model fishing choices at a finer scale than at a trip, this can be modified fairly easily.
+
+
+## DEPRECATED - Code to aggregate subtrip landings to subtrips.
+
+We are now pulling subtrips along to the end instead of aggregating.  If you want to contract multi-area or multi-gear trips down to a single observation, this is how you would do it.
+
+```{r construct_trip_aggregates, echo=TRUE, eval=FALSE}
+### 1. Aggregate DOLLAR, POUNDS, LANDED
+Agg_DOL_POUN_LAND <- VTR_DMIS_AC %>%
+  group_by(TRIPID) %>%
+ summarise(Agg_DOLLAR = sum(DOLLAR), Agg_POUNDS = sum(POUNDS), Agg_LANDED = sum(LANDED))
+
+#### Testing to make sure there are no duplicates in TRIPID groups; this should equal 0
+sum(duplicated(Agg_DOL_POUN_LAND$TRIPID))
+stopifnot(sum(duplicated(Agg_DOL_POUN_LAND$TRIPID))==0)
+
+###  2. Add back into original data set 
+#### all = FALSE is used to keep only rows that match from the data frames
+VTR_DMIS_AC_Agg <- merge(VTR_DMIS_AC,Agg_DOL_POUN_LAND, by.x = "TRIPID", by.y = "TRIPID", all.x = TRUE, all.y = FALSE)
+
+
+
+
+### 3.Parse out Maximum Dollar amounts in order to drop lesser subtrips
+VTR_DMIS_AC_Agg <- VTR_DMIS_AC_Agg %>% group_by(TRIPID) %>% filter(DOLLAR == max(DOLLAR))
+### Another way to check this is by running the following code: VTR_DMIS_AC_Agg %>% group_by(TRIPID) %>% arrange(desc(DOLLAR)) %>% slice(1)
+
+## Test out 
+sum(duplicated(VTR_DMIS_AC_Agg$TRIPID))
+
+stopifnot(sum(duplicated(VTR_DMIS_AC_Agg$TRIPID))==0)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Trips reported on land will be dropped from observations 
+
+```{r spatial land and water, echo=TRUE, eval=TRUE}
+
+
+
+#################################################################################################
+# change these variables to read in the veslogDMISmerge and what the network path to the shared drive is on your laptop
+coordinate_table_input <-VTR_DMIS_AC
+lat_column = "DDLAT"
+lon_column = "DDLON"
+shapefile_path<-East_Cst_crop_2020_path
+#################################################################################################
+shapefile_path_to_spatialpolygons <- function(shapefile_path,
+                                              projection = CRS("+proj=longlat +datum=NAD83 +no_defs +ellps=GRS80 +towgs84=0,0,0")) {
+
+  # shapefile_path = "C:/Users/dennis.corvi/Documents/R/Projects/OffshoreWindDev/offshoreWind/areas_minus_SF"
+  # projection = CRS("+proj=longlat +datum=NAD83 +no_defs +ellps=GRS80 +towgs84=0,0,0")
+  layer_name = unique(gsub(pattern="(.+)(.shp$)","\\1", ignore.case = TRUE , list.files(path=shapefile_path, pattern = "(.+)(.shp$)", ignore.case =TRUE, recursive=F, full.names=F)))
+  if (length(layer_name)==0) {
+    stop("Shapefile path does not contain a shapefile")
+  }
+  if (length(layer_name) > 1) {
+    file_list <- list.files(shapefile_path, pattern = "*shp$", full.names = TRUE)
+    shapefile_list <- lapply(file_list, sf::read_sf)
+    all_shapes <- sf::st_as_sf(data.table::rbindlist(shapefile_list))
+    all_shapes <- all_shapes[,(names(all_shapes) %in% c("Name"))]
+    all_shapes <- sf::as_Spatial(all_shapes, cast = TRUE, IDs = paste0("ID", seq_along(from)))
+    all_shapes@data$NAME <- all_shapes@data$Name
+    all_shapes@data$Name <- NULL
+  } else { # if only one shape
+    all_shapes <- rgdal::readOGR(dsn=shapefile_path, layer=layer_name, verbose=F)
+  }
+  all_shapes <- spTransform(all_shapes, CRS=projection)
+  return(all_shapes)
+}
+#################################################################################################
+
+crs = CRS("+proj=longlat +datum=NAD83 +no_defs +ellps=GRS80 +towgs84=0,0,0")
+shapefile_area <- SpatialPolygonsDataFrame(aggregate(shapefile_path_to_spatialpolygons(shapefile_path, projection = crs)), data = data.frame("NAME" = "Land"))
+coordinate_table <- as_tibble(coordinate_table_input %>%
+                                rename("LAT" = .data[[lat_column]], "LON" = .data[[lon_column]]) %>%
+                                drop_na(LON, LAT) %>%
+                                mutate(LON = if_else(LON>1, LON*-1, LON )) %>%
+                                relocate(LON, LAT)) # drop LAT LON NAs, correct LON, change column order - check if any longitudes are positive and switch to negative
+
+xy <- coordinate_table[,c(1,2)]
+coordinate_table <- SpatialPointsDataFrame(coords = xy, data = coordinate_table, proj4string = crs)
+coordinate_table <- spTransform(coordinate_table, CRSobj = crs)
+
+vtridx <- over(coordinate_table, shapefile_area)
+
+colnames(vtridx)[1] <- "NAME"
+
+coordinate_table$Area <- vtridx$NAME
+coordinate_table <- coordinate_table@data
+
+VTR_DMIS_AC <- coordinate_table %>%
+  mutate_if(is.factor, as.character) %>%
+  mutate(Area = if_else(is.na(Area), "Non-land", Area)) %>% # change NAs to read "Non-land"
+  rename("{lat_column}" := LAT, "{lon_column}" := LON) %>%  # change lat lon columns back to original names
+  filter(Area == "Non-land")
+#Delete Area Variable; Served its purpose as a filter
+VTR_DMIS_AC$Area <- NULL
+
+
+```
+
+
+
+```{r Zone Assignment - Lease Areas and Ten Minute Squares,echo=TRUE, eval=TRUE, results=FALSE}
+
+#Contents used have come from the "Zone Assignment" Rmd created by Bryce McMagnus using FishSET zone assignment methods. Changes have been made to reflect updated data sets and new ten minute squares shapefile.   
+
+# Set data vintage
+vintage_string<-"2022_03_22"
+
+
+# Load in 10 minute squares
+tenMinSqr_new <- 
+  here("data",
+       "external",
+       "shapefiles",
+       "Ten Minute Squares Cut North and Greater Atlantic") %>% 
+  st_read() %>% 
+  st_zm() # remove Z/M dimensions from feature
+
+# Load in All Lease Areas 
+lease <- 
+  here("data",
+       "external",
+       "shapefiles",
+       "All_Lease_Areas_Shapefile") %>% 
+  st_read() %>% 
+  st_zm()
+
+
+
+
+## Zone assignment; This is the approach to assign observations to zones.
+
+# create sf version of data, convert to WGS84
+# crs <- st_crs(lease) # using crs from ten minute squares didn't change results
+# 4326 is shorthand for WGS84 (https://epsg.io/4326)
+crs <- 4326
+
+scallop_sf <- 
+  st_as_sf(x = VTR_DMIS_AC, coords = c("DDLON", "DDLAT"), 
+           crs = crs)
+
+# convert Squares to WGS84 
+lease <- st_transform(lease, crs = st_crs(scallop_sf))
+
+# same results as st_within
+inter <- sf::st_intersects(scallop_sf, lease)
+
+inter_save <- inter 
+ 
+ if (any(lengths(inter) > 1)) { # if more than one zone intersects, assign to closest zone
+  
+  dub <- which(lengths(inter) > 1)
+  inter[dub] <- st_nearest_feature(scallop_sf[dub,], lease)
+ }
+
+# Add ZoneID column to data
+pts <- as.data.frame(as.numeric(inter))
+colnames(pts) <- "col.id"
+scallop_sf$lease <- lease$NAME[pts$col.id]
+scallop_sf$lease <- lease$NAME[as.numeric(inter)]
+
+
+
+final_product_lease <- scallop_sf
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Some summary statistcs
+
+
+```{r summary_statistics,echo=TRUE, eval=TRUE}
+# Here are a few summary statistics tables.  Nothing too fancy. This may be sufficient.
+
+summary(final_product_lease)
+
+table(final_product_lease$YEAR)
+
+table(final_product_lease$GEARCODE)
+
+table(final_product_lease$ftpt)
+
+table(final_product_lease$VTR_STATE)
+
+table(final_product_lease$`Plan Code`)
+table(final_product_lease$`Program Code`)
+
+
+```
+
+
+```{r 10minute_square_plot,echo=FALSE, eval=TRUE,fig.cap = "10 minutes squares" }
+ qtm(TMSQ_sp) + tm_legend(show = FALSE)
+```
+
+
+
+```{r Wind_Energy_Plot,echo=FALSE, eval=TRUE,fig.cap = "Wind Energy Areas" }
+qtm(lease_sp) + tm_legend(show = FALSE)
+```
+
+
+# R Session Information
+```{r session_info, include=TRUE, echo=TRUE, results=TRUE, eval=TRUE}
+sessionInfo()
+```
+This may be useful for diagnosing and troubleshooting one day.
+
+# Here is some code that we are no longer using. 
+
+## Code to filter on the Limited Access (LA) Fleet using landings and crew size
+We considered filtering out the LADAS scallop fleet by using landings greater than or equal to 850 pounds and Crew less than or equal to 8. These are based on crew limits. We are using the activities codes instead.  In summary:
+
+FY2007-2014: No limit on crew (except for 7 in DMV starting in FY2014)
+FY2015-2019: 8
+
+> Initially, vessels had the same crew limits in access areas as they did on DAS.  However, Framework 18(fishing year 2006) eliminated the seven-person crew limit (five-person limit for small dredge category vessels) for scallop access area trips. The purpose of this was to eliminate inefficiencies caused by the crew limit for fishing activity that is limited by a possession limit. The crew limit was established to control vessels’ shucking capacity when fishing under DAS. 
+
+> Eight years later, Framework 25 (fishing year 2014) imposed a crew limit of seven individuals (the same as DAS) per limited access vessel (five-person limit for small dredge category vessels) in DMV.  The purpose of this was to protect small scallops and discourage vessels from highgrading.
+
+>Framework 26 (fishing year 2015) implemented crew limits for all access areas. In an effort to protect small scallops and discourage vessels from high-grading.  Framework 26 imposed a crew limit of eight individuals (one extra from DAS) per limited access vessel, including the captain, when fishing in any scallop access area. If a vessel is participating in the small dredge program, it may not have more than six people (one extra from DAS) on board, including the captain, on an access area trip. 
+
+>Finally, because the scallops in the NLS–S–D were expected to have lower yield than similar sized scallops in other areas, Framework 32 (fishing year 2020) allowed two additional crew members aboard both limited access full-time (10 in total) and limited access full-time small dredge vessels (8 in total). This allowed vessels to add additional crew members to increase the shucking capacity of the vessel and reach the possession limit in a time more consistent with other access areas. (Travis Ford @ GARFO - Nov 17,2021)
+
+
+FY2007-2014: No limit (except for 7 in DMV starting in FY2014)
+FY2015-2019: 8
+
+```{r filter_LA1, echo=TRUE, eval=FALSE}
+LA_Estimate <- VTR_DMIS_AC_Agg %>% filter(Agg_LANDED >= 850 & CREW <= 8)
+```
+
+
+
