@@ -16,7 +16,7 @@ here(), load libraries, and set a data vintage.
 # Set Path
 here::i_am("data_wrangle/data_processing.Rmd")
 
-# Please ensure you have the proper packages installed with (install.packages()) or a request to ITD if any libaries do not load.  
+# Please ensure you have the proper packages installed with (install.packages()) or a request to ITD if any libraries do not load.  
 
 
 library("here")
@@ -443,6 +443,7 @@ VTR_DMIS_AC$Area <- NULL
 ```
 
 
+# Zone and Lease Assignments 
 
 ```{r Zone Assignment - Lease Areas and Ten Minute Squares,echo=TRUE, eval=TRUE, results=FALSE}
 
@@ -474,42 +475,63 @@ lease <-
 
 
 ## Zone assignment; This is the approach to assign observations to zones.
-
 # create sf version of data, convert to WGS84
-# crs <- st_crs(lease) # using crs from ten minute squares didn't change results
 # 4326 is shorthand for WGS84 (https://epsg.io/4326)
+
+
+
+## Lease Areas 
+
 crs <- 4326
-
-scallop_sf <- 
-  st_as_sf(x = VTR_DMIS_AC, coords = c("DDLON", "DDLAT"), 
+final_product_lease <- 
+  st_as_sf(x = VTR_DMIS_merge, coords = c("DDLON", "DDLAT"), 
            crs = crs)
-
 # convert Squares to WGS84 
-lease <- st_transform(lease, crs = st_crs(scallop_sf))
+lease <- st_transform(lease, crs = st_crs(final_product_lease))
+# same results as st_within
+inter <- sf::st_intersects(final_product_lease, lease)
+inter_save <- inter 
+ 
+ if (any(lengths(inter) > 1)) { # if more than one zone intersects, assign to closest zone
+  
+  dub <- which(lengths(inter) > 1)
+  inter[dub] <- st_nearest_feature(final_product_lease[dub,], lease)
+ }
+# Add ZoneID column to data
+pts <- as.data.frame(as.numeric(inter))
+colnames(pts) <- "col.id"
+final_product_lease$lease <- lease$NAME[pts$col.id]
+final_product_lease$lease <- lease$NAME[as.numeric(inter)]
+
+
+
+
+
+
+# Zone Assignments 
+tenMinSqr_new <- st_transform(tenMinSqr_new, crs = st_crs(final_product_lease))
 
 # same results as st_within
-inter <- sf::st_intersects(scallop_sf, lease)
+inter <- sf::st_intersects(final_product_lease, tenMinSqr_new)
 
 inter_save <- inter 
  
  if (any(lengths(inter) > 1)) { # if more than one zone intersects, assign to closest zone
   
   dub <- which(lengths(inter) > 1)
-  inter[dub] <- st_nearest_feature(scallop_sf[dub,], lease)
+  inter[dub] <- st_nearest_feature(final_product_lease[dub,], tenMinSqr_new)
  }
 
 # Add ZoneID column to data
 pts <- as.data.frame(as.numeric(inter))
 colnames(pts) <- "col.id"
-scallop_sf$lease <- lease$NAME[pts$col.id]
-scallop_sf$lease <- lease$NAME[as.numeric(inter)]
+pts$ID <- tenMinSqr_new$MN10SQID[pts$col.id]
+final_product_lease$ZoneID <- pts$ID
 
-
-
-final_product_lease <- scallop_sf
 
 
 ```
+
 
 
 
