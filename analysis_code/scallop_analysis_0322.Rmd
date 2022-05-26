@@ -10,6 +10,8 @@ output:
     code_folding: show
 params:
     AA_DAS_only: TRUE
+    GCIFQ_only: FALSE
+
 ---
 
 ## Introduction
@@ -184,6 +186,15 @@ scallop0322MainDataTable <-
   filter(fleet == "Access Area" | fleet == "Days at Sea")
 
 ```
+
+```{r retain_GCIFQ, eval=params$GCIFQ_only}
+
+scallop0322MainDataTable <- 
+  scallop0322MainDataTable %>% 
+  filter(fleet == "GCIFQ")
+
+```
+
 <br><br><br>
 
 ## Aggregate subtrips to trips
