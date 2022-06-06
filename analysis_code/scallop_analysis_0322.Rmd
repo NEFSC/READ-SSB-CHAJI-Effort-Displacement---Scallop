@@ -88,7 +88,7 @@ datasets_list <- gsub(".csv" ,"", datasets_list)
 vintage_string <- max(datasets_list)
 rm(datasets_list)
 
-dat_filepath <- here("data", "main", paste0("final_product_lease", vintage_string, ".Rds"))
+dat_filepath <- here("data", "main", paste0("final_product_lease_", vintage_string, ".Rds"))
 ```
 
 <br><br>
@@ -214,7 +214,7 @@ scallop0322MainDataTable <-
 <br><br>
 
 By setting this code chunk to eval=TRUE, all of the statistics from this point forward 
-are for the Limited Access and General Category IFQ fleets. Currently set to 
+are for the Limited Access General Category IFQ (LAGC-IFQ) fleet. Currently set to 
 `r !params$AA_DAS_only`.
 #```{r retain_LA_GCIFQ, eval=!params$AA_DAS_only}
 ```{r retain_LA_GCIFQ, eval=FALSE}
